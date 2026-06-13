@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Ask My Docs — RAG System</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      background: #0f0f0f;
+      color: #e0e0e0;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 40px 20px;
+    }
+
+    header {
+      text-align: center;
+      margin-bottom: 40px;
+    }
+
+    header h1 {
+      font-size: 2.2rem;
+      font-weight: 700;
+      background: linear-gradient(90deg, #6ee7f7, #a78bfa);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    header p {
+      color: #888;
+      margin-top: 8px;
+      font-size: 0.95rem;
+    }
+
+    .card {
+      background: #1a1a1a;
+      border: 1px solid #2a2a2a;
+      border-radius: 14px;
+      padding: 28px;
+      width: 100%;
+      max-width: 700px;
+      margin-bottom: 24px;
+    }
+
+    .card h2 {
+      font-size: 1rem;
+      color: #a78bfa;
+      margin-bottom: 16px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    .upload-area {
+      border: 2px dashed #333;
+      border-radius: 10px;
+      padding: 30px;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color 0.2s;
+    }
+
+    .upload-area:hover { border-color: #6ee7f7; }
+
+    .upload-area input { display: none; }
+
+    .upload-area label {
+      cursor: pointer;
+      color: #6ee7f7;
+      font-weight: 600;
+    }
+
+    .upload-area p { color: #666; font-size: 0.85rem; margin-top: 6px; }
+
+    #upload-status {
+      margin-top: 12px;
+      font-size: 0.9rem;
+      color: #6ee7f7;
+      min-height: 20px;
+    }
+
+    .query-row {
+      display: flex;
+      gap: 10px;
+    }
+
+    input[type="text"] {
+      flex: 1;
+      background: #111;
+      border: 1px solid #333;
+      border-radius: 8px;
+      padding: 12px 16px;
+      color: #e0e0e0;
+      font-size: 0.95rem;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    input[type="text"]:focus { border-color: #a78bfa; }
+
+    button {
+      background: linear-gradient(135deg, #6ee7f7, #a78bfa);
+      border: none;
+      border-radius: 8px;
+      padding: 12px 22px;
+      color: #000;
+      font-weight: 700;
+      cursor: pointer;
+      font-size: 0.95rem;
+      transition: opacity 0.2s;
+    }
+
+    button:hover { opacity: 0.85; }
+    button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    #answer-box {
+      margin-top: 20px;
+      display: none;
+    }
+
+    #answer-box .label {
+      font-size: 0.8rem;
+      color: #666;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin-bottom: 8px;
+    }
+
+    #answer-text {
+      background: #111;
+      border: 1px solid #2a2a2a;
+      border-radius: 10px;
+      padding: 18px;
+      line-height: 1.7;
+      font-size: 0.95rem;
+      white-space: pre-wrap;
+    }
+
+    .meta {
+      display: flex;
+      gap: 16px;
+      margin-top: 12px;
+      font-size: 0.82rem;
+      color: #555;
+    }
+
+    .meta span { color: #6ee7f7; font-weight: 600; }
+
+    .loader {
+      display: none;
+      margin-top: 16px;
+      text-align: center;
+      color: #666;
+      font-size: 0.9rem;
+    }
+
+    .dot-anim::after {
+      content: '';
+      animation: dots 1.2s steps(3, end) infinite;
+    }
+
+    @keyframes dots {
+      0%   { content: '.'; }
+      33%  { content: '..'; }
+      66%  { content: '...'; }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>📄 Ask My Docs</h1>
+  <p>Upload a PDF and ask questions — answers with citations</p>
+</header>
+
+<!-- Upload Card -->
+<div class="card">
+  <h2>Step 1 — Upload PDF</h2>
+  <div class="upload-area" onclick="document.getElementById('pdf-input').click()">
+    <input type="file" id="pdf-input" accept=".pdf" onchange="uploadPDF(this)"/>
+    <label>Click to choose a PDF</label>
+    <p>Only .pdf files supported</p>
+  </div>
+  <div id="upload-status"></div>
+</div>
+
+<!-- Query Card -->
+<div class="card">
+  <h2>Step 2 — Ask a Question</h2>
+  <div class="query-row">
+    <input type="text" id="question-input" placeholder="e.g. What is the main contribution of this paper?" />
+    <button id="ask-btn" onclick="askQuestion()" disabled>Ask</button>
+  </div>
+  <div class="loader" id="loader"><span class="dot-anim">Thinking</span></div>
+  <div id="answer-box">
+    <div class="label">Answer</div>
+    <div id="answer-text"></div>
+    <div class="meta">
+      Latency: <span id="latency">—</span> &nbsp;|&nbsp; Sources used: <span id="sources">—</span>
+    </div>
+  </div>
+</div>
+
+<script>
+  const API = ""; // empty = same domain (works on Vercel)
+
+  async function uploadPDF(input) {
+    const file = input.files[0];
+    if (!file) return;
+    const status = document.getElementById("upload-status");
+    status.textContent = "Uploading and indexing...";
+
+    const form = new FormData();
+    form.append("file", file);
+
+    try {
+      const res = await fetch(`${API}/upload`, { method: "POST", body: form });
+      const data = await res.json();
+      if (res.ok) {
+        status.textContent = `✅ ${data.message} (${data.chunks} chunks indexed)`;
+        document.getElementById("ask-btn").disabled = false;
+      } else {
+        status.textContent = `❌ Error: ${data.detail}`;
+      }
+    } catch (e) {
+      status.textContent = "❌ Could not connect to API.";
+    }
+  }
+
+  async function askQuestion() {
+    const q = document.getElementById("question-input").value.trim();
+    if (!q) return;
+
+    document.getElementById("loader").style.display = "block";
+    document.getElementById("answer-box").style.display = "none";
+    document.getElementById("ask-btn").disabled = true;
+
+    try {
+      const res = await fetch(`${API}/query`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ question: q })
+      });
+      const data = await res.json();
+
+      document.getElementById("answer-text").textContent = data.answer;
+      document.getElementById("latency").textContent = `${data.latency_seconds}s`;
+      document.getElementById("sources").textContent = data.sources_used;
+      document.getElementById("answer-box").style.display = "block";
+    } catch (e) {
+      document.getElementById("answer-text").textContent = "❌ Error connecting to API.";
+      document.getElementById("answer-box").style.display = "block";
+    }
+
+    document.getElementById("loader").style.display = "none";
+    document.getElementById("ask-btn").disabled = false;
+  }
+
+  document.getElementById("question-input").addEventListener("keydown", e => {
+    if (e.key === "Enter") askQuestion();
+  });
+</script>
+</body>
+</html>
